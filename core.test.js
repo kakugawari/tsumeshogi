@@ -133,6 +133,44 @@ test('玉方に持ち駒があると、合駒のぶん詰みが延びる', () =>
   assertGenuineMate(withDefence, defendedResult, 3);
 });
 
+// ---- 表記 -----------------------------------------------------------------
+//
+// 盤に描く駒札の字と、棋譜に書く呼び名は別。駒札は本物の駒と同じ一文字
+// (全・圭・杏)、棋譜は読み下しの決まりどおり成銀・成桂・成香と書く。
+
+test('棋譜の呼び名は成銀・成桂・成香', () => {
+  assert.strictEqual(Core.pieceKifuName('+S'), '成銀');
+  assert.strictEqual(Core.pieceKifuName('+N'), '成桂');
+  assert.strictEqual(Core.pieceKifuName('+L'), '成香');
+  assert.strictEqual(Core.pieceKifuName('+P'), 'と');
+  assert.strictEqual(Core.pieceKifuName('+B'), '馬');
+  assert.strictEqual(Core.pieceKifuName('+R'), '龍');
+  assert.strictEqual(Core.pieceKifuName('+s'), '成銀', '後手の駒でも同じ呼び名');
+});
+
+test('盤に描く駒札は一文字のまま (埋め込みフォントに「成」が無いため)', () => {
+  assert.strictEqual(Core.pieceDisplayName('+S'), '全');
+  assert.strictEqual(Core.pieceDisplayName('+N'), '圭');
+  assert.strictEqual(Core.pieceDisplayName('+L'), '杏');
+});
+
+test('棋譜: 成り駒が動く手は成銀と書く', () => {
+  // 5五の成銀が4四へ動く手
+  const st = stateFrom([[1, 1, 'k'], [5, 5, '+S']], null, 'b');
+  const move = Core.legalMoves(st, 'b').find((m) => m.from === Core.idx(5, 5) && m.to === Core.idx(4, 4));
+  assert.ok(move, '5五の成銀は4四へ動けるはず');
+  assert.strictEqual(Core.formatMove(move, 'b'), '▲4四成銀');
+});
+
+test('棋譜: 成る手は「成る前の駒名 + 成」と書く', () => {
+  // 2三の飛が2二へ動いて成る手
+  const st = stateFrom([[1, 1, 'k'], [2, 3, 'R']], null, 'b');
+  const move = Core.legalMoves(st, 'b')
+    .find((m) => m.from === Core.idx(2, 3) && m.to === Core.idx(2, 2) && m.promote);
+  assert.ok(move, '2三の飛は2二へ成って動けるはず');
+  assert.strictEqual(Core.formatMove(move, 'b'), '▲2二飛成');
+});
+
 // ---- 詰まない局面 ---------------------------------------------------------
 
 test('玉2枚だけでは絶対に詰まない', () => {

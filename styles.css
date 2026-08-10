@@ -202,7 +202,13 @@ body {
 }
 
 .cell:active { background: rgba(0, 0, 0, 0.08); }
-.cell.selected-drop { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* いま選んでいる駒。ここからもう一度タップで回す / 別のマスへ動かす */
+.cell.selected {
+  background: color-mix(in srgb, var(--accent) 45%, transparent);
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
 
 .piece { display: inline-block; line-height: 1; }
 .piece.gote { transform: rotate(180deg); }

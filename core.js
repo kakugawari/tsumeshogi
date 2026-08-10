@@ -549,17 +549,36 @@
   // ---- 表記 ---------------------------------------------------------------
 
   const KANJI_NUM = ['', '一', '二', '三', '四', '五', '六', '七', '八', '九'];
-  // 成り駒は将棋の駒札どおりの一文字略称 (杏・圭・全)。埋め込みフォント
-  // (kakugawari/kifu と共通, Shippori Mincho Bold から切り出した14文字) が
-  // この略称のぶんしか収録していないため、"成香" のような二文字表記はしない。
+
+  // 盤に描く駒札の字。成り駒は本物の駒と同じ一文字略称 (杏・圭・全)。
+  // 埋め込みフォント (kakugawari/kifu と共通, Shippori Mincho Bold から
+  // 切り出した14文字) が「成」を含まないので、盤の上ではこの略称を使う。
   const PIECE_NAME = {
     P: '歩', L: '香', N: '桂', S: '銀', G: '金', B: '角', R: '飛', K: '玉',
     '+P': 'と', '+L': '杏', '+N': '圭', '+S': '全', '+B': '馬', '+R': '龍'
   };
 
+  // 棋譜に書くときの呼び名。読み下しの決まりどおり「成香・成桂・成銀」と書く
+  // (と・馬・龍はそのまま)。駒札の略称とは別に持つ。
+  const KIFU_NAME = {
+    P: '歩', L: '香', N: '桂', S: '銀', G: '金', B: '角', R: '飛', K: '玉',
+    '+P': 'と', '+L': '成香', '+N': '成桂', '+S': '成銀', '+B': '馬', '+R': '龍'
+  };
+
+  function pieceKey(piece) {
+    return isPromoted(piece) ? '+' + baseType(piece).toUpperCase() : baseType(piece).toUpperCase();
+  }
+
+  /** 盤に描く一文字 (駒札の字)。 */
   function pieceDisplayName(piece) {
-    const key = isPromoted(piece) ? '+' + baseType(piece).toUpperCase() : baseType(piece).toUpperCase();
+    const key = pieceKey(piece);
     return PIECE_NAME[key] || key;
+  }
+
+  /** 棋譜に書く呼び名 (成銀・成桂・成香)。 */
+  function pieceKifuName(piece) {
+    const key = pieceKey(piece);
+    return KIFU_NAME[key] || key;
   }
 
   function formatMove(move, color) {
@@ -567,7 +586,8 @@
     const file = fileOf(move.to);
     const rank = rankOf(move.to);
     const pos = String(file) + KANJI_NUM[rank];
-    const name = pieceDisplayName(move.piece) + (move.promote ? '成' : '');
+    // 成る手は「成る前の駒名 + 成」(例: ▲2二飛成)
+    const name = pieceKifuName(move.piece) + (move.promote ? '成' : '');
     const suffix = move.drop ? '打' : '';
     return mark + pos + name + suffix;
   }
@@ -639,7 +659,7 @@
     pieceTargets, legalMoves, isKingInCheck, isSquareAttacked, findKing,
     makeMove, unmakeMove, hasAnyLegalMove,
     findMate, findAlternateFirstMoves,
-    formatMove, describePv, pieceDisplayName,
+    formatMove, describePv, pieceDisplayName, pieceKifuName,
     pieceCounts, validatePosition,
     stateKey
   };

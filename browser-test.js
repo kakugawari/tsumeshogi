@@ -162,24 +162,69 @@ async function run() {
     ok(afterDrop.left === 17, `置いたぶん駒台から減る (歩 ${afterDrop.left}枚)`);
 
     // ------------------------------------------------ 盤の駒をタップして回す
-    section('盤の駒をタップして 攻め→守り→成攻め→成守り と回す');
+    section('盤の駒: 1回目で選び、続けてタップすると回る');
+
+    // 1回目のタップは「選ぶ」だけ。駒はまだ変わらない
+    await phone.locator('.cell[data-file="5"][data-rank="5"]').tap();
+    const firstTap = await phone.evaluate(() => ({
+      piece: window.__app.state().pos.board[window.Core.idx(5, 5)],
+      selected: window.__app.state().selected === window.Core.idx(5, 5),
+      marked: document.querySelector('.cell[data-file="5"][data-rank="5"]').classList.contains('selected')
+    }));
+    ok(firstTap.piece === 'P', `1回目のタップでは駒は変わらない (${firstTap.piece})`);
+    ok(firstTap.selected && firstTap.marked, '1回目のタップでその駒が選ばれ、印が付く');
+
+    // 2回目以降のタップで 攻め→守り→成った攻め→成った守り→攻め と回る
     const cycle = [];
     for (let i = 0; i < 4; i++) {
       await phone.locator('.cell[data-file="5"][data-rank="5"]').tap();
       cycle.push(await phone.evaluate(() => window.__app.state().pos.board[window.Core.idx(5, 5)]));
     }
     ok(cycle.join(',') === 'p,+P,+p,P',
-      `攻め→守り→成った攻め→成った守り→攻め と回る (P,${cycle.join(',')})`);
+      `続けてタップすると 守り→成った攻め→成った守り→攻め と回る (P,${cycle.join(',')})`);
 
     // 金は成れないので 攻め ↔ 守り の2つだけ
     await phone.locator('#standWhiteChips .chip[data-type="G"]').tap();
-    await phone.locator('.cell[data-file="4"][data-rank="5"]').tap();
+    await phone.locator('.cell[data-file="4"][data-rank="5"]').tap();   // 置く
+    await phone.locator('.cell[data-file="4"][data-rank="5"]').tap();   // 選ぶ
     const goldCycle = [];
     for (let i = 0; i < 2; i++) {
       await phone.locator('.cell[data-file="4"][data-rank="5"]').tap();
       goldCycle.push(await phone.evaluate(() => window.__app.state().pos.board[window.Core.idx(4, 5)]));
     }
     ok(goldCycle.join(',') === 'g,G', `金は攻め↔守りだけで回る (G,${goldCycle.join(',')})`);
+
+    // ------------------------------------------------ 置いた駒を動かす
+    section('置いた駒を別のマスへ動かす');
+    // 4五の金は回したところなので、まだ選ばれたまま。そのまま6七へ動かす
+    await phone.locator('.cell[data-file="6"][data-rank="7"]').tap();
+    const moved = await phone.evaluate(() => ({
+      from: window.__app.state().pos.board[window.Core.idx(4, 5)],
+      to: window.__app.state().pos.board[window.Core.idx(6, 7)],
+      hands: window.__app.state().pos.hands.w.G,
+      selected: window.__app.state().selected === window.Core.idx(6, 7)
+    }));
+    ok(moved.from === null && moved.to === 'G',
+      `選んだ駒が空いたマスへ動く (元:${moved.from} / 先:${moved.to})`);
+    ok(moved.selected, '動かしたあとも、その駒が選ばれたままになる');
+
+    // 動かしただけでは駒の枚数は増えも減りもしない
+    ok(moved.hands === 3, `動かしても駒台の枚数は変わらない (金 ${moved.hands}枚)`);
+
+    // 動かした先でもう一度タップすれば、そのまま向きを変えられる
+    await phone.locator('.cell[data-file="6"][data-rank="7"]').tap();
+    const afterMoveCycle = await phone.evaluate(() =>
+      window.__app.state().pos.board[window.Core.idx(6, 7)]);
+    ok(afterMoveCycle === 'g', `動かした先でもタップで向きが変わる (${afterMoveCycle})`);
+
+    // 別の駒をタップすると、選び直しになる (動かしてしまわない)
+    await phone.locator('.cell[data-file="5"][data-rank="5"]').tap();
+    const reselected = await phone.evaluate(() => ({
+      selected: window.__app.state().selected === window.Core.idx(5, 5),
+      stillThere: window.__app.state().pos.board[window.Core.idx(6, 7)]
+    }));
+    ok(reselected.selected && reselected.stillThere === 'g',
+      '駒のあるマスをタップすると、動かさずに選び直しになる');
 
     // ------------------------------------------------ 攻方の持ち駒へ渡す
     section('攻方の持ち駒へ渡す');
@@ -210,7 +255,8 @@ async function run() {
     await phone.locator('.cell[data-file="9"][data-rank="9"]').tap();
     const kingPlaced = await phone.evaluate(() => window.__app.state().pos.board[window.Core.idx(9, 9)]);
     ok(kingPlaced === 'K', `駒箱から玉を置ける (${kingPlaced})`);
-    await phone.locator('.cell[data-file="9"][data-rank="9"]').tap();
+    await phone.locator('.cell[data-file="9"][data-rank="9"]').tap();   // 選ぶ
+    await phone.locator('.cell[data-file="9"][data-rank="9"]').tap();   // 回す
     const kingFlipped = await phone.evaluate(() => window.__app.state().pos.board[window.Core.idx(9, 9)]);
     ok(kingFlipped === 'k', `玉もタップで攻め↔守りが変わる (${kingFlipped})`);
 

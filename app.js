@@ -55,7 +55,8 @@
 
   const state = {
     pos: initialPosition(),
-    pick: null,      // { type: 'P', from: 'w' | 'b' | 'box' } — いま持っている駒
+    pick: null,      // { type: 'P', from: 'w' | 'b' | 'box' } — 駒台から持っている駒
+    selected: null,  // 盤で選んでいるマスの番号 (動かす元 / 回す対象)
     erasing: false,
     solving: false,
     worker: null,
@@ -99,7 +100,9 @@
     for (const cell of els.board.children) {
       const file = Number(cell.dataset.file);
       const rank = Number(cell.dataset.rank);
-      const piece = state.pos.board[C.idx(file, rank)];
+      const i = C.idx(file, rank);
+      const piece = state.pos.board[i];
+      cell.classList.toggle('selected', state.selected === i);
       cell.innerHTML = '';
       if (piece) {
         const span = document.createElement('span');
@@ -125,6 +128,14 @@
     return order[(order.indexOf(piece) + 1) % order.length];
   }
 
+  /**
+   * 盤のマスをタップしたとき。
+   *
+   *   駒のあるマス            → その駒を選ぶ
+   *   選んでいる駒をもう一度   → 攻め → 守り → 成った攻め → 成った守り と回す
+   *   選んだあと空いたマス     → そこへ動かす
+   *   何も選んでいない空マス   → 駒台から持っている駒を置く
+   */
   function onCellClick(ev) {
     const file = Number(ev.currentTarget.dataset.file);
     const rank = Number(ev.currentTarget.dataset.rank);
@@ -135,11 +146,19 @@
       if (!piece) return;
       returnToStand(piece);
       state.pos.board[i] = null;
+      state.selected = null;
+    } else if (state.selected === i && piece) {
+      state.pos.board[i] = cyclePiece(piece);          // 2回目以降のタップで回す
+    } else if (state.selected !== null && !piece) {
+      state.pos.board[i] = state.pos.board[state.selected];   // 空いたマスへ動かす
+      state.pos.board[state.selected] = null;
+      state.selected = i;
     } else if (piece) {
-      state.pos.board[i] = cyclePiece(piece);
+      state.selected = i;                              // 盤の駒を選ぶ
+      state.pick = null;
     } else if (state.pick) {
-      if (!takeFromSource(state.pick)) return;   // 駒台に在庫が無ければ何もしない
-      state.pos.board[i] = state.pick.type;      // まずは攻め (先手・不成) で置く
+      if (!takeFromSource(state.pick)) return;         // 駒台に在庫が無ければ何もしない
+      state.pos.board[i] = state.pick.type;            // まずは攻め (先手・不成) で置く
       clearPickIfEmpty();
     } else {
       return;
@@ -213,6 +232,7 @@
 
       chip.addEventListener('click', () => {
         state.erasing = false;
+        state.selected = null;
         state.pick = picked ? null : { type: t, from: color };
         renderAll();
       });
@@ -253,6 +273,12 @@
 
     if (state.erasing) {
       els.pickStatus.textContent = '「消す」を選んでいます。盤の駒をタップすると駒台に戻ります。';
+    } else if (state.selected !== null) {
+      const piece = state.pos.board[state.selected];
+      const where = `${C.fileOf(state.selected)}${KANJI_NUM[C.rankOf(state.selected)]}`;
+      els.pickStatus.textContent = piece
+        ? `${where}の「${C.pieceDisplayName(piece)}」を選んでいます。空いたマスをタップで移動、もう一度タップで向きが変わります。`
+        : '駒台の駒をタップして選び、盤をタップすると置けます。';
     } else if (state.pick) {
       els.pickStatus.textContent =
         `「${NAMES[state.pick.type]}」を持っています。盤をタップすると置けます。`;
@@ -384,6 +410,7 @@
     try {
       state.pos = C.parseSfen(els.sfenText.value);
       state.pick = null;
+      state.selected = null;
       state.erasing = false;
       els.turnSelect.value = state.pos.turn;
       renderAll();
@@ -413,6 +440,7 @@
     sampleIndex++;
     state.pos = C.parseSfen(sample.sfen);
     state.pick = null;
+    state.selected = null;
     state.erasing = false;
     els.turnSelect.value = state.pos.turn;
     renderAll();
@@ -423,6 +451,7 @@
     state.pos = initialPosition();
     state.pos.turn = els.turnSelect.value;
     state.pick = null;
+    state.selected = null;
     state.erasing = false;
     renderAll();
     clearResult();
@@ -437,12 +466,13 @@
 
     els.boxKing.addEventListener('click', () => {
       state.erasing = false;
+      state.selected = null;
       state.pick = (state.pick && state.pick.type === 'K') ? null : { type: 'K', from: 'box' };
       renderAll();
     });
     els.toolErase.addEventListener('click', () => {
       state.erasing = !state.erasing;
-      if (state.erasing) state.pick = null;
+      if (state.erasing) { state.pick = null; state.selected = null; }
       renderAll();
     });
 
