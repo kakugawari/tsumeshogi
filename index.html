@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>詰将棋チェッカー</title>
+<meta name="description" content="盤に駒を並べて、詰むかどうかと何手詰めかを調べる">
+<meta name="theme-color" content="#151a2e">
+<link rel="icon" href="./icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+
+<div id="app">
+  <header id="topbar">
+    <h1 class="title">詰将棋チェッカー</h1>
+    <div class="topbar-actions">
+      <button type="button" id="btnSample" class="btn">お試し局面</button>
+      <button type="button" id="btnClear" class="btn">クリア</button>
+    </div>
+  </header>
+
+  <main id="stage">
+
+    <section id="boardSection">
+      <div id="boardOuter">
+        <div id="fileLabels" aria-hidden="true"></div>
+        <div id="boardRow">
+          <div id="rankLabels" aria-hidden="true"></div>
+          <div id="board" role="group" aria-label="盤面"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="handSection">
+      <div class="hand" id="handWhite">
+        <span class="hand-label">後手 持ち駒</span>
+        <div class="hand-pieces" id="handWhitePieces"></div>
+      </div>
+      <div class="hand" id="handBlack">
+        <span class="hand-label">先手 持ち駒</span>
+        <div class="hand-pieces" id="handBlackPieces"></div>
+      </div>
+    </section>
+
+    <section id="paletteSection">
+      <div class="palette-row">
+        <span class="palette-caption">置く駒</span>
+        <label class="promote-toggle"><input type="checkbox" id="promoteToggle"> 成</label>
+        <button type="button" id="toolErase" class="tool" data-tool="erase" aria-pressed="false">消す</button>
+      </div>
+      <div class="palette-group">
+        <span class="palette-caption">後手の駒</span>
+        <div class="palette-row" id="paletteWhite" data-color="w"></div>
+      </div>
+      <div class="palette-group">
+        <span class="palette-caption">先手の駒</span>
+        <div class="palette-row" id="paletteBlack" data-color="b"></div>
+      </div>
+    </section>
+
+    <section id="controlsSection">
+      <label class="turn-select">
+        攻方(手番):
+        <select id="turnSelect">
+          <option value="b">先手</option>
+          <option value="w">後手</option>
+        </select>
+      </label>
+      <button type="button" id="btnCheck" class="btn btn-primary">詰みチェック</button>
+      <button type="button" id="btnCancel" class="btn" hidden>やめる</button>
+    </section>
+
+    <section id="resultSection" aria-live="polite">
+      <p class="result-headline" id="resultHeadline">局面を作ってから「詰みチェック」を押す</p>
+      <ul class="result-warnings" id="resultWarnings"></ul>
+      <ol class="result-moves" id="resultMoves"></ol>
+      <p class="result-note" id="resultNote"></p>
+    </section>
+
+    <details id="sfenSection">
+      <summary>SFEN で読み込み・書き出し</summary>
+      <textarea id="sfenText" rows="3" spellcheck="false" placeholder="例: 9/9/9/9/4k4/9/9/9/4K4 b P 1"></textarea>
+      <div class="sfen-actions">
+        <button type="button" id="btnLoadSfen" class="btn">読み込む</button>
+        <button type="button" id="btnExportSfen" class="btn">今の盤面を書き出す</button>
+      </div>
+    </details>
+
+  </main>
+</div>
+
+<script src="./core.js"></script>
+<script src="./app.js"></script>
+</body>
+</html>
