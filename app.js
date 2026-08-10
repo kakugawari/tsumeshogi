@@ -1,24 +1,35 @@
 /*!
- * app.js — 画面まわり。盤の編集・持ち駒の編集・詰みチェックの呼び出し。
+ * app.js — 画面まわり。盤の編集・駒台の編集・詰みチェックの呼び出し。
+ *
+ * 駒の置き方は「駒台の駒をタップして選ぶ → 盤 (または反対側の駒台) を
+ * タップして置く」の1通りだけ。置いたあとの向き・成りは、盤の駒を
+ * タップして 攻め → 守り → 成った攻め → 成った守り と回して決める。
+ * 駒台がそのまま駒の置き場になっているので、別に駒パレットを持たない。
  */
 (function () {
   'use strict';
 
   const C = window.Core;
-  const PALETTE_TYPES = ['P', 'L', 'N', 'S', 'G', 'B', 'R', 'K'];
-  const HAND_ORDER = ['P', 'L', 'N', 'S', 'G', 'B', 'R'];
+
+  // 駒台に並べる順 (強い駒から。SFEN の持ち駒の並びと同じ)
+  const STAND_ORDER = ['R', 'B', 'G', 'S', 'N', 'L', 'P'];
   const NAMES = { P: '歩', L: '香', N: '桂', S: '銀', G: '金', B: '角', R: '飛', K: '玉' };
+
+  // 将棋の駒一式 (玉を除く38枚)。詰将棋の決めごとどおり、盤に出していない駒は
+  // すべて玉方の持ち駒として扱うので、最初はぜんぶ玉方の駒台に入れておく。
+  const STANDARD_SET = { P: 18, L: 4, N: 4, S: 4, G: 4, B: 2, R: 2 };
 
   const els = {
     board: document.getElementById('board'),
     fileLabels: document.getElementById('fileLabels'),
     rankLabels: document.getElementById('rankLabels'),
-    handWhitePieces: document.getElementById('handWhitePieces'),
-    handBlackPieces: document.getElementById('handBlackPieces'),
-    paletteWhite: document.getElementById('paletteWhite'),
-    paletteBlack: document.getElementById('paletteBlack'),
+    standWhiteLabel: document.getElementById('standWhiteLabel'),
+    standBlackLabel: document.getElementById('standBlackLabel'),
+    standWhiteChips: document.getElementById('standWhiteChips'),
+    standBlackChips: document.getElementById('standBlackChips'),
+    pickStatus: document.getElementById('pickStatus'),
+    boxKing: document.getElementById('boxKing'),
     toolErase: document.getElementById('toolErase'),
-    promoteToggle: document.getElementById('promoteToggle'),
     turnSelect: document.getElementById('turnSelect'),
     btnCheck: document.getElementById('btnCheck'),
     btnCancel: document.getElementById('btnCancel'),
@@ -33,20 +44,19 @@
     btnExportSfen: document.getElementById('btnExportSfen')
   };
 
-  // 将棋の駒一式 (42枚、玉を除く)。最初は全部ここに置いておき、必要な駒だけ
-  // 盤や持ち駒へタップで移してもらう形にする。
-  const STANDARD_SET = { P: 18, L: 4, N: 4, S: 4, G: 4, B: 2, R: 2 };
-
+  /** 最初の局面: 玉方の玉を5一に置き、残りの駒はすべて玉方の駒台へ。 */
   function initialPosition() {
     const pos = C.emptyState();
     Object.assign(pos.hands.w, STANDARD_SET);
+    pos.board[C.idx(5, 1)] = 'k';
     pos.turn = 'b';
     return pos;
   }
 
   const state = {
     pos: initialPosition(),
-    tool: null, // { color, type, promote } | 'erase' | null
+    pick: null,      // { type: 'P', from: 'w' | 'b' | 'box' } — いま持っている駒
+    erasing: false,
     solving: false,
     worker: null,
     requestId: 0,
@@ -86,8 +96,7 @@
   }
 
   function renderBoard() {
-    const cells = els.board.children;
-    for (const cell of cells) {
+    for (const cell of els.board.children) {
       const file = Number(cell.dataset.file);
       const rank = Number(cell.dataset.rank);
       const piece = state.pos.board[C.idx(file, rank)];
@@ -95,53 +104,104 @@
       if (piece) {
         const span = document.createElement('span');
         const color = C.colorOf(piece);
-        const promoted = C.isPromoted(piece);
-        span.className = 'piece' + (color === 'w' ? ' gote' : '') + (promoted ? ' promoted' : '');
+        span.className = 'piece' + (color === 'w' ? ' gote' : '') +
+          (C.isPromoted(piece) ? ' promoted' : '');
         span.textContent = C.pieceDisplayName(piece);
         cell.appendChild(span);
       }
     }
   }
 
+  /**
+   * 盤の駒を 攻め → 守り → 成った攻め → 成った守り → 攻め … と回す。
+   * 金と玉は成れないので 攻め ↔ 守り の2つだけ。
+   */
+  function cyclePiece(piece) {
+    const type = C.baseType(piece).toUpperCase();
+    const promotable = type !== 'G' && type !== 'K';
+    const order = promotable
+      ? [type, type.toLowerCase(), '+' + type, '+' + type.toLowerCase()]
+      : [type, type.toLowerCase()];
+    return order[(order.indexOf(piece) + 1) % order.length];
+  }
+
   function onCellClick(ev) {
     const file = Number(ev.currentTarget.dataset.file);
     const rank = Number(ev.currentTarget.dataset.rank);
     const i = C.idx(file, rank);
-    if (state.tool === 'erase') {
+    const piece = state.pos.board[i];
+
+    if (state.erasing) {
+      if (!piece) return;
+      returnToStand(piece);
       state.pos.board[i] = null;
-    } else if (state.tool) {
-      const t = state.tool;
-      let code = t.type;
-      if (t.type !== 'K' && t.promote) code = '+' + t.type;
-      if (t.color === 'w') code = code.toLowerCase();
-      state.pos.board[i] = state.pos.board[i] === code ? null : code;
+    } else if (piece) {
+      state.pos.board[i] = cyclePiece(piece);
+    } else if (state.pick) {
+      if (!takeFromSource(state.pick)) return;   // 駒台に在庫が無ければ何もしない
+      state.pos.board[i] = state.pick.type;      // まずは攻め (先手・不成) で置く
+      clearPickIfEmpty();
     } else {
       return;
     }
-    renderBoard();
+    renderAll();
     clearResult();
   }
 
-  // ---- 持ち駒 -------------------------------------------------------------
+  // ---- 駒台 ---------------------------------------------------------------
 
-  function renderHands() {
-    renderHandSide('b', els.handBlackPieces);
-    renderHandSide('w', els.handWhitePieces);
+  /** 持っている駒を、その出どころから1枚減らす。減らせたら true。 */
+  function takeFromSource(pick) {
+    if (pick.from === 'box') return true;        // 玉は枚数を数えない
+    const left = state.pos.hands[pick.from][pick.type] || 0;
+    if (left <= 0) return false;
+    state.pos.hands[pick.from][pick.type] = left - 1;
+    return true;
   }
 
-  // 持ち駒は「選んだ駒をタップして置く／すでにある駒をタップして戻す」で編集する。
-  // 数を選ぶための欄は持たない (盤に駒を置くのと同じ操作感にそろえるため)。
-  function renderHandSide(color, container) {
+  /** 盤から取り除いた駒を玉方の駒台に戻す (詰将棋では余り駒は玉方のもの)。 */
+  function returnToStand(piece) {
+    const type = C.baseType(piece).toUpperCase();
+    if (type === 'K') return;                    // 玉は駒台では数えない
+    state.pos.hands.w[type] = Math.min(18, (state.pos.hands.w[type] || 0) + 1);
+  }
+
+  /** 在庫が尽きた駒を持ったままにしない。 */
+  function clearPickIfEmpty() {
+    const p = state.pick;
+    if (!p || p.from === 'box') return;
+    if ((state.pos.hands[p.from][p.type] || 0) <= 0) state.pick = null;
+  }
+
+  function standLabel(color) {
+    const side = color === 'b' ? '先手' : '後手';
+    return state.pos.turn === color
+      ? `攻方 (${side}) の持ち駒`
+      : `玉方 (${side}) の駒台 — 残りの駒`;
+  }
+
+  function renderStands() {
+    els.standWhiteLabel.textContent = standLabel('w');
+    els.standBlackLabel.textContent = standLabel('b');
+    renderStandChips('w', els.standWhiteChips);
+    renderStandChips('b', els.standBlackChips);
+  }
+
+  function renderStandChips(color, container) {
     container.innerHTML = '';
     let any = false;
-    for (const t of HAND_ORDER) {
+    for (const t of STAND_ORDER) {
       const n = state.pos.hands[color][t] || 0;
       if (n <= 0) continue;
       any = true;
       const chip = document.createElement('button');
       chip.type = 'button';
-      chip.className = 'hand-piece';
-      chip.setAttribute('aria-label', `${NAMES[t]} ${n}枚 (タップで1枚戻す)`);
+      chip.className = 'chip';
+      chip.dataset.color = color;
+      chip.dataset.type = t;
+      const picked = !!state.pick && state.pick.from === color && state.pick.type === t;
+      chip.setAttribute('aria-pressed', picked ? 'true' : 'false');
+      chip.setAttribute('aria-label', `${NAMES[t]} ${n}枚`);
 
       const label = document.createElement('span');
       label.textContent = NAMES[t];
@@ -152,78 +212,59 @@
       chip.appendChild(count);
 
       chip.addEventListener('click', () => {
-        state.pos.hands[color][t] = Math.max(0, n - 1);
-        renderHands();
-        clearResult();
+        state.erasing = false;
+        state.pick = picked ? null : { type: t, from: color };
+        renderAll();
       });
       container.appendChild(chip);
     }
     if (!any) {
       const empty = document.createElement('span');
-      empty.className = 'hand-empty';
+      empty.className = 'stand-empty';
       empty.textContent = 'なし';
       container.appendChild(empty);
     }
 
-    const add = document.createElement('button');
-    add.type = 'button';
-    add.className = 'hand-add';
-    const canAdd = state.tool && state.tool !== 'erase' && state.tool.type !== 'K';
-    add.disabled = !canAdd;
-    add.textContent = canAdd ? `＋${NAMES[state.tool.type]}をここに` : '＋ (駒を選ぶと置けます)';
-    add.addEventListener('click', () => {
-      if (!canAdd) return;
-      const t = state.tool.type;
+    // 反対側の駒台へ渡すための置き場。持っていないときは押せない状態で出しておく
+    // (出したり消したりすると駒台の高さが変わり、盤がずれてしまうため)。
+    const drop = document.createElement('button');
+    drop.type = 'button';
+    drop.className = 'stand-drop';
+    drop.dataset.color = color;
+    const canDrop = !!state.pick && state.pick.type !== 'K' && state.pick.from !== color;
+    drop.disabled = !canDrop;
+    drop.textContent = canDrop ? `${NAMES[state.pick.type]}をここへ` : 'ここへ置く';
+    drop.addEventListener('click', () => {
+      if (!canDrop) return;
+      if (!takeFromSource(state.pick)) return;
+      const t = state.pick.type;
       state.pos.hands[color][t] = Math.min(18, (state.pos.hands[color][t] || 0) + 1);
-      renderHands();
+      state.pick = { type: t, from: color };   // 置いた先から続けて持ち直す
+      renderAll();
       clearResult();
     });
-    container.appendChild(add);
+    container.appendChild(drop);
   }
 
-  // ---- パレット -----------------------------------------------------------
+  function renderTools() {
+    const kingPicked = !!state.pick && state.pick.type === 'K';
+    els.boxKing.setAttribute('aria-pressed', kingPicked ? 'true' : 'false');
+    els.toolErase.setAttribute('aria-pressed', state.erasing ? 'true' : 'false');
 
-  function buildPalette() {
-    buildPaletteRow(els.paletteBlack, 'b');
-    buildPaletteRow(els.paletteWhite, 'w');
-    els.toolErase.addEventListener('click', () => {
-      state.tool = state.tool === 'erase' ? null : 'erase';
-      refreshPaletteSelection();
-      renderHands();
-    });
-    els.promoteToggle.addEventListener('change', () => {
-      if (state.tool && state.tool !== 'erase') state.tool.promote = els.promoteToggle.checked;
-    });
-  }
-
-  function buildPaletteRow(container, color) {
-    container.innerHTML = '';
-    for (const t of PALETTE_TYPES) {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'palette-piece';
-      btn.dataset.color = color;
-      btn.dataset.type = t;
-      btn.textContent = NAMES[t];
-      btn.setAttribute('aria-pressed', 'false');
-      btn.addEventListener('click', () => {
-        state.tool = { color, type: t, promote: t !== 'K' && els.promoteToggle.checked };
-        refreshPaletteSelection();
-        renderHands();
-      });
-      container.appendChild(btn);
+    if (state.erasing) {
+      els.pickStatus.textContent = '「消す」を選んでいます。盤の駒をタップすると駒台に戻ります。';
+    } else if (state.pick) {
+      els.pickStatus.textContent =
+        `「${NAMES[state.pick.type]}」を持っています。盤をタップすると置けます。`;
+    } else {
+      els.pickStatus.textContent = '駒台の駒をタップして選び、盤をタップすると置けます。';
     }
   }
 
-  function refreshPaletteSelection() {
-    const buttons = els.paletteBlack.querySelectorAll('.palette-piece').length
-      ? [...els.paletteBlack.children, ...els.paletteWhite.children] : [];
-    for (const btn of buttons) {
-      const match = state.tool && state.tool !== 'erase' &&
-        state.tool.color === btn.dataset.color && state.tool.type === btn.dataset.type;
-      btn.setAttribute('aria-pressed', match ? 'true' : 'false');
-    }
-    els.toolErase.setAttribute('aria-pressed', state.tool === 'erase' ? 'true' : 'false');
+  function renderAll() {
+    renderBoard();
+    renderStands();
+    renderTools();
   }
 
   // ---- 詰みチェック ---------------------------------------------------------
@@ -280,8 +321,7 @@
     els.resultMoves.innerHTML = '';
     els.resultNote.textContent = '';
 
-    const worker = ensureWorker();
-    worker.postMessage({
+    ensureWorker().postMessage({
       type: 'solve',
       requestId: myId,
       state: state.lastSnapshot,
@@ -310,9 +350,8 @@
     if (mate.mate) {
       els.resultHeadline.className = 'result-headline mate';
       els.resultHeadline.textContent = `詰み — ${mate.plies}手詰め`;
-      const lines = C.describePv(state.lastSnapshot, mate.pv);
       els.resultMoves.innerHTML = '';
-      lines.forEach((line) => {
+      C.describePv(state.lastSnapshot, mate.pv).forEach((line) => {
         const li = document.createElement('li');
         li.textContent = line;
         els.resultMoves.appendChild(li);
@@ -331,11 +370,11 @@
       els.resultNote.textContent = `調べた局面数: ${mate.nodes.toLocaleString('ja-JP')} (打ち切り)`;
     } else if (mate.error === 'no-king') {
       els.resultHeadline.className = 'result-headline nomate';
-      els.resultHeadline.textContent = '玉が置かれていません';
+      els.resultHeadline.textContent = '玉方の玉が置かれていません';
     } else {
       els.resultHeadline.className = 'result-headline nomate';
       els.resultHeadline.textContent = '不詰み (詰みません)';
-      els.resultNote.textContent = `調べた局面数: ${mate.nodes.toLocaleString('ja-JP')} (最大${41}手まで確認)`;
+      els.resultNote.textContent = `調べた局面数: ${mate.nodes.toLocaleString('ja-JP')} (最大41手まで確認)`;
     }
   }
 
@@ -343,11 +382,11 @@
 
   function loadSfen() {
     try {
-      const parsed = C.parseSfen(els.sfenText.value);
-      state.pos = parsed;
+      state.pos = C.parseSfen(els.sfenText.value);
+      state.pick = null;
+      state.erasing = false;
       els.turnSelect.value = state.pos.turn;
-      renderBoard();
-      renderHands();
+      renderAll();
       clearResult();
     } catch (e) {
       els.resultHeadline.className = 'result-headline nomate';
@@ -360,18 +399,12 @@
     els.sfenText.value = C.toSfen(state.pos);
   }
 
-  // ---- サンプル・クリア -----------------------------------------------------
+  // ---- サンプル・最初から ----------------------------------------------------
 
-  // 攻方の玉は詰将棋の diagram では省略されるのが普通なので、お試し局面にも置かない。
+  // 攻方の玉は詰将棋の図面では省くのが普通なので、お試し局面にも置かない。
   const SAMPLES = [
-    {
-      name: '1手詰め',
-      sfen: '8k/9/7G1/9/9/9/9/9/9 b R 1'
-    },
-    {
-      name: '3手詰め',
-      sfen: '8k/9/6G2/9/9/9/9/9/9 b LS 1'
-    }
+    { name: '1手詰め', sfen: '8k/9/7G1/9/9/9/9/9/9 b R 1' },
+    { name: '3手詰め', sfen: '8k/9/6G2/9/9/9/9/9/9 b LS 1' }
   ];
   let sampleIndex = 0;
 
@@ -379,17 +412,19 @@
     const sample = SAMPLES[sampleIndex % SAMPLES.length];
     sampleIndex++;
     state.pos = C.parseSfen(sample.sfen);
+    state.pick = null;
+    state.erasing = false;
     els.turnSelect.value = state.pos.turn;
-    renderBoard();
-    renderHands();
+    renderAll();
     clearResult();
   }
 
-  function clearBoard() {
+  function resetBoard() {
     state.pos = initialPosition();
     state.pos.turn = els.turnSelect.value;
-    renderBoard();
-    renderHands();
+    state.pick = null;
+    state.erasing = false;
+    renderAll();
     clearResult();
   }
 
@@ -397,26 +432,42 @@
 
   function main() {
     buildBoardSkeleton();
-    buildPalette();
-    renderBoard();
-    renderHands();
+    renderAll();
     clearResult();
+
+    els.boxKing.addEventListener('click', () => {
+      state.erasing = false;
+      state.pick = (state.pick && state.pick.type === 'K') ? null : { type: 'K', from: 'box' };
+      renderAll();
+    });
+    els.toolErase.addEventListener('click', () => {
+      state.erasing = !state.erasing;
+      if (state.erasing) state.pick = null;
+      renderAll();
+    });
 
     els.btnCheck.addEventListener('click', startCheck);
     els.btnCancel.addEventListener('click', cancelCheck);
-    els.btnClear.addEventListener('click', clearBoard);
+    els.btnClear.addEventListener('click', resetBoard);
     els.btnSample.addEventListener('click', loadSample);
     els.btnLoadSfen.addEventListener('click', loadSfen);
     els.btnExportSfen.addEventListener('click', exportSfen);
-    els.turnSelect.addEventListener('change', clearResult);
+    els.turnSelect.addEventListener('change', () => {
+      state.pos.turn = els.turnSelect.value;
+      renderStands();          // 攻方・玉方の呼び名が入れ替わる
+      clearResult();
+    });
 
+    // 自動テストから中身をのぞくための入口
     window.__app = {
       state: () => state,
+      renderAll,
       renderBoard,
-      renderHands,
+      renderStands,
+      cyclePiece,
       startCheck,
       loadSample,
-      clearBoard,
+      resetBoard,
       loadSfen,
       exportSfen
     };

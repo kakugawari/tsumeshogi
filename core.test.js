@@ -114,6 +114,25 @@ test('3手詰め: describePv が手順を文字にできる', () => {
   assert.ok(lines[2].includes('詰み'));
 });
 
+// ---- 玉方の持ち駒は合駒として効く -------------------------------------------
+//
+// 詰将棋の決めごとで「盤に出していない残りの駒はすべて玉方の持ち駒」。
+// つまり玉方は残り駒を合駒に使えるので、同じ盤面でも玉方の持ち駒の有無で
+// 手数が変わる。アプリは最初、駒一式を玉方の駒台に入れた状態で始まるため、
+// この違いが出ることを見張っておく。
+
+test('玉方に持ち駒があると、合駒のぶん詰みが延びる', () => {
+  const board = [[1, 1, 'k'], [2, 3, 'G']];
+  const bare = stateFrom(board, { b: { R: 1 } }, 'b');
+  const withDefence = stateFrom(board, { b: { R: 1 }, w: { R: 1, B: 2, G: 3, S: 4, N: 4, L: 4, P: 18 } }, 'b');
+
+  const bareResult = Core.findMate(bare, { maxPlies: 9 });
+  assertGenuineMate(bare, bareResult, 1);
+
+  const defendedResult = Core.findMate(withDefence, { maxPlies: 9 });
+  assertGenuineMate(withDefence, defendedResult, 3);
+});
+
 // ---- 詰まない局面 ---------------------------------------------------------
 
 test('玉2枚だけでは絶対に詰まない', () => {
