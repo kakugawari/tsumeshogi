@@ -10,6 +10,7 @@
   'use strict';
 
   const C = window.Core;
+  const R = window.Recognize;
 
   // 駒台に並べる順 (強い駒から。SFEN の持ち駒の並びと同じ)
   const STAND_ORDER = ['R', 'B', 'G', 'S', 'N', 'L', 'P'];
@@ -41,7 +42,13 @@
     resultNote: document.getElementById('resultNote'),
     sfenText: document.getElementById('sfenText'),
     btnLoadSfen: document.getElementById('btnLoadSfen'),
-    btnExportSfen: document.getElementById('btnExportSfen')
+    btnExportSfen: document.getElementById('btnExportSfen'),
+    btnPickImage: document.getElementById('btnPickImage'),
+    imageInput: document.getElementById('imageInput'),
+    dropZone: document.getElementById('dropZone'),
+    imagePreviewWrap: document.getElementById('imagePreviewWrap'),
+    imagePreview: document.getElementById('imagePreview'),
+    imageNote: document.getElementById('imageNote')
   };
 
   /** 最初の局面: 玉方の玉を5一に置き、残りの駒はすべて玉方の駒台へ。 */
@@ -404,6 +411,206 @@
     }
   }
 
+  // ---- 画像から読み取る -------------------------------------------------------
+  //
+  // 手本の字はアプリ自身が持っている埋め込みフォントで描く。外から何も
+  // 取ってこないので、Artifact でもオフラインでも同じように動く。
+
+  const GLYPHS = [
+    ['歩', 'P'], ['香', 'L'], ['桂', 'N'], ['銀', 'S'], ['金', 'G'], ['角', 'B'], ['飛', 'R'],
+    ['玉', 'K'], ['王', 'K'],
+    ['と', '+P'], ['杏', '+L'], ['圭', '+N'], ['全', '+S'], ['馬', '+B'], ['龍', '+R'], ['竜', '+R']
+  ];
+  // 相手のアプリがどの書体で描いているか分からないので、何通りかの手本を持つ
+  const TEMPLATE_FONTS = [
+    '"Koma", serif',
+    '"Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP", serif',
+    '"Hiragino Kaku Gothic ProN", "Noto Sans JP", system-ui, sans-serif'
+  ];
+
+  let templatesCache = null;
+
+  function buildTemplates() {
+    if (templatesCache) return templatesCache;
+    const size = 64;
+    const cv = document.createElement('canvas');
+    cv.width = size;
+    cv.height = size;
+    const ctx = cv.getContext('2d', { willReadFrequently: true });
+    const out = [];
+    for (const font of TEMPLATE_FONTS) {
+      for (const [ch, code] of GLYPHS) {
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, size, size);
+        ctx.fillStyle = '#000';
+        ctx.font = `700 ${Math.round(size * 0.80)}px ${font}`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(ch, size / 2, size / 2 + size * 0.02);
+        const ink = R.inkMaskOf(R.toGray(ctx.getImageData(0, 0, size, size)), size, size);
+        if (ink) out.push({ code, char: ch, font, mask: ink.mask });
+      }
+    }
+    templatesCache = out;
+    return out;
+  }
+
+  function loadImageBitmap(src) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error('画像を読み込めませんでした'));
+      if (typeof src === 'string') img.src = src;
+      else img.src = URL.createObjectURL(src);
+    });
+  }
+
+  /** 画像を canvas に描いて画素を取り出す。大きすぎるものは縮める。 */
+  function imageDataOf(img, maxSide) {
+    const scale = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
+    const w = Math.max(1, Math.round(img.naturalWidth * scale));
+    const h = Math.max(1, Math.round(img.naturalHeight * scale));
+    const cv = document.createElement('canvas');
+    cv.width = w;
+    cv.height = h;
+    const ctx = cv.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(img, 0, 0, w, h);
+    return ctx.getImageData(0, 0, w, h);
+  }
+
+  /** 見つけた格子を小さな絵にして出す。合っているか目で確かめてもらうため。 */
+  function drawPreview(img, grid) {
+    const cv = els.imagePreview;
+    const maxW = 420;
+    const scale = Math.min(1, maxW / img.naturalWidth);
+    cv.width = Math.round(img.naturalWidth * scale);
+    cv.height = Math.round(img.naturalHeight * scale);
+    const ctx = cv.getContext('2d');
+    ctx.drawImage(img, 0, 0, cv.width, cv.height);
+    if (!grid) return;
+    const k = cv.width / grid.imageWidth;
+    ctx.strokeStyle = '#e0628a';
+    ctx.lineWidth = 1.5;
+    for (let i = 0; i <= 9; i++) {
+      const x = (grid.x0 + i * grid.cellX) * k;
+      const y = (grid.y0 + i * grid.cellY) * k;
+      ctx.beginPath();
+      ctx.moveTo(x, grid.y0 * k);
+      ctx.lineTo(x, (grid.y0 + 9 * grid.cellY) * k);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(grid.x0 * k, y);
+      ctx.lineTo((grid.x0 + 9 * grid.cellX) * k, y);
+      ctx.stroke();
+    }
+  }
+
+  /**
+   * 読み取った盤面を反映する。
+   * 盤に出ていない駒は、詰将棋の決めごとどおり玉方の駒台に入れる。
+   */
+  function applyRecognized(board) {
+    const pos = C.emptyState();
+    for (let i = 0; i < 81; i++) pos.board[i] = board[i] || null;
+    const used = { P: 0, L: 0, N: 0, S: 0, G: 0, B: 0, R: 0 };
+    for (const p of pos.board) {
+      if (!p) continue;
+      const t = C.baseType(p).toUpperCase();
+      if (t !== 'K') used[t]++;
+    }
+    for (const t of Object.keys(STANDARD_SET)) {
+      pos.hands.w[t] = Math.max(0, STANDARD_SET[t] - used[t]);
+    }
+    pos.turn = els.turnSelect.value;
+    state.pos = pos;
+    state.pick = null;
+    state.selected = null;
+    state.erasing = false;
+  }
+
+  /** 読み取りに自信がないマスか。目で確かめてほしいところに印を出す。 */
+  function isUnsure(c) {
+    if (!c || c.empty) return false;
+    return c.score < 0.60 || c.margin < 0.04 || !c.orientationSure;
+  }
+
+  function markUnsure(cells) {
+    for (const cell of els.board.children) {
+      const i = C.idx(Number(cell.dataset.file), Number(cell.dataset.rank));
+      cell.classList.toggle('unsure', isUnsure(cells[i]));
+    }
+  }
+
+  async function handleImage(src) {
+    els.imageNote.textContent = '読み取っています…';
+    els.imagePreviewWrap.hidden = false;
+    try {
+      const img = await loadImageBitmap(src);
+      const data = imageDataOf(img, 1400);
+      const grid = R.detectGrid(data);
+      grid.imageWidth = data.width;
+
+      const tooSmall = grid.cell < 12;
+      const outside = grid.x0 + 9 * grid.cellX > data.width + 2 ||
+        grid.y0 + 9 * grid.cellY > data.height + 2;
+      if (tooSmall || outside || grid.squareness < 0.80) {
+        drawPreview(img, null);
+        els.imageNote.textContent =
+          '盤の枠を見つけられませんでした。盤のまわりだけを切り取った画像だと読み取れることがあります。';
+        return;
+      }
+
+      const result = R.recognizeBoard(data, buildTemplates(), { grid });
+      applyRecognized(result.board);
+      renderAll();
+      markUnsure(result.cells);
+      clearResult();
+      drawPreview(img, grid);
+
+      const found = result.board.filter(Boolean).length;
+      const unsure = result.cells.filter(isUnsure).length;
+      els.imageNote.textContent =
+        `${found}枚の駒を読み取りました` +
+        (unsure ? `（うち${unsure}枚は自信がありません。赤い点の付いたマスを確かめてください）` : '') +
+        '。持ち駒は読み取らないので、攻方の持ち駒は駒台から渡してください。';
+    } catch (e) {
+      els.imageNote.textContent = '読み取れませんでした: ' + e.message;
+    }
+  }
+
+  function setupImageInput() {
+    els.btnPickImage.addEventListener('click', () => els.imageInput.click());
+    els.imageInput.addEventListener('change', () => {
+      if (els.imageInput.files && els.imageInput.files[0]) handleImage(els.imageInput.files[0]);
+    });
+
+    const zone = els.dropZone;
+    zone.addEventListener('click', () => els.imageInput.click());
+    zone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      zone.classList.add('over');
+    });
+    zone.addEventListener('dragleave', () => zone.classList.remove('over'));
+    zone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      zone.classList.remove('over');
+      const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if (file) handleImage(file);
+    });
+
+    document.addEventListener('paste', (e) => {
+      const items = e.clipboardData && e.clipboardData.items;
+      if (!items) return;
+      for (const item of items) {
+        if (item.type && item.type.indexOf('image') === 0) {
+          const file = item.getAsFile();
+          if (file) { e.preventDefault(); handleImage(file); }
+          return;
+        }
+      }
+    });
+  }
+
   // ---- SFEN ---------------------------------------------------------------
 
   function loadSfen() {
@@ -480,6 +687,7 @@
     els.btnCancel.addEventListener('click', cancelCheck);
     els.btnClear.addEventListener('click', resetBoard);
     els.btnSample.addEventListener('click', loadSample);
+    setupImageInput();
     els.btnLoadSfen.addEventListener('click', loadSfen);
     els.btnExportSfen.addEventListener('click', exportSfen);
     els.turnSelect.addEventListener('change', () => {
@@ -499,7 +707,10 @@
       loadSample,
       resetBoard,
       loadSfen,
-      exportSfen
+      exportSfen,
+      handleImage,
+      buildTemplates,
+      applyRecognized
     };
   }
 

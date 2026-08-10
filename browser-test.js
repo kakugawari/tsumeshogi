@@ -12,11 +12,14 @@
 const { spawn } = require('node:child_process');
 const path = require('node:path');
 const http = require('node:http');
+const fs = require('node:fs');
+const os = require('node:os');
 
 const PORT = Number(process.env.PORT || 8124);
 const URL = `http://localhost:${PORT}/`;
 const ROOT = __dirname;
 const CHROMIUM = process.env.CHROMIUM_PATH;   // 手元の Chromium を使いたいとき
+const SHOT_PATH = path.join(os.tmpdir(), 'tsumeshogi-test-board.png');   // 読み取り試験用
 
 let passed = 0;
 let failed = 0;
@@ -312,6 +315,116 @@ async function run() {
     await phone.locator('#btnExportSfen').tap();
     const exported = await phone.inputValue('#sfenText');
     ok(exported.split(' ').length >= 3, `SFEN らしき文字列が書き出される (${exported})`);
+
+    // ------------------------------------------------ 画像から読み取る
+    // 自分で描いた盤を撮って、それを読み直せるか (往復) で確かめる。
+    section('画像から盤面を読み取る');
+    // ページの中で使う読み取りの手順 (アプリ本体と同じ道すじを通す)
+    await phone.evaluate(() => {
+      window.readBoardFromUrl = async function (url) {
+        const R = window.Recognize, app = window.__app;
+        const img = await new Promise((ok, ng) => {
+          const i = new Image();
+          i.onload = () => ok(i);
+          i.onerror = () => ng(new Error('画像を読めない'));
+          i.src = url;
+        });
+        const scale = Math.min(1, 1400 / Math.max(img.naturalWidth, img.naturalHeight));
+        const cv = document.createElement('canvas');
+        cv.width = Math.round(img.naturalWidth * scale);
+        cv.height = Math.round(img.naturalHeight * scale);
+        const ctx = cv.getContext('2d', { willReadFrequently: true });
+        ctx.drawImage(img, 0, 0, cv.width, cv.height);
+        const data = ctx.getImageData(0, 0, cv.width, cv.height);
+        const grid = R.detectGrid(data);
+        const out = R.recognizeBoard(data, app.buildTemplates(), { grid });
+        const unsure = out.cells.map((c) =>
+          !!(c && !c.empty && (c.score < 0.60 || c.margin < 0.04 || !c.orientationSure)));
+        return { board: out.board, unsure, grid: { cell: grid.cell, x0: grid.x0, y0: grid.y0 } };
+      };
+    });
+
+    const RECOG_SFEN = 'l1+P1k2nl/2g2+B3/p1np1s1pp/9/1r7/2P6/PPS+p1PPPP/2G2G3/LN1K3+rL b GSNP2b3p 1';
+    await phone.evaluate((s) => {
+      document.getElementById('sfenText').value = s;
+      document.getElementById('btnLoadSfen').click();
+    }, RECOG_SFEN);
+    const recogTruth = await phone.evaluate(() => window.__app.state().pos.board.slice());
+
+    // 盤だけを撮った画像
+    const boardShot = await phone.locator('#board').screenshot();
+    const boardUrl = 'data:image/png;base64,' + boardShot.toString('base64');
+    const t0 = Date.now();
+    const boardRead = await phone.evaluate((url) => readBoardFromUrl(url), boardUrl);
+    const readMs = Date.now() - t0;
+
+    let hit = 0;
+    for (let i = 0; i < 81; i++) {
+      if ((recogTruth[i] || null) === (boardRead.board[i] || null)) hit++;
+    }
+    ok(hit === 81, `盤だけの画像なら81マスすべて読み取れる (${hit}/81)`);
+    ok(readMs < 4000, `読み取りは数秒で終わる (${readMs}ms)`);
+
+    // 画面まるごとのスクリーンショット (駒台やボタンが写り込んでいる)
+    const fullShot = await phone.screenshot({ fullPage: true });
+    const fullUrl = 'data:image/png;base64,' + fullShot.toString('base64');
+    const fullRead = await phone.evaluate((url) => readBoardFromUrl(url), fullUrl);
+    let fullHit = 0;
+    for (let i = 0; i < 81; i++) {
+      if ((recogTruth[i] || null) === (fullRead.board[i] || null)) fullHit++;
+    }
+    ok(fullRead.grid.cell > 12, `画面まるごとでも盤の枠を見つけられる (1マス ${fullRead.grid.cell.toFixed(0)}px)`);
+    ok(fullHit >= 73, `画面まるごとでも大半を読み取れる (${fullHit}/81)`);
+
+    // 読み違えたマスには「自信なし」の印が付いていてほしい
+    let wrongUnflagged = 0;
+    for (let i = 0; i < 81; i++) {
+      const t = recogTruth[i] || null;
+      const g = fullRead.board[i] || null;
+      if (t !== g && !fullRead.unsure[i]) wrongUnflagged++;
+    }
+    ok(wrongUnflagged <= 2,
+      `読み違えたマスにはおおむね印が付く (印の無い読み違い ${wrongUnflagged}件)`);
+
+    // ファイルを選んで読み込む道すじも動くか
+    await phone.locator('#btnClear').tap();
+    await phone.waitForTimeout(50);
+    fs.writeFileSync(SHOT_PATH, boardShot);
+    await phone.setInputFiles('#imageInput', SHOT_PATH);
+    await phone.waitForFunction(
+      () => /読み取りました|見つけられません|読み取れません/.test(
+        document.getElementById('imageNote').textContent),
+      { timeout: 15000 }
+    );
+    const noteText = await phone.evaluate(() => document.getElementById('imageNote').textContent);
+    ok(noteText.includes('読み取りました'), `画像を選ぶと読み取って盤に入る (${noteText.slice(0, 30)}…)`);
+    const placed = await phone.evaluate(() => window.__app.state().pos.board.filter(Boolean).length);
+    ok(placed > 20, `読み取った駒が盤に並ぶ (${placed}枚)`);
+
+    // 盤に出ていない駒は玉方の駒台に入る (詰将棋の決めごと)。
+    // 読み取りは完璧ではないので「読み違えないこと」ではなく、
+    // 駒の勘定の決まりが守られていることを確かめる。
+    const bookkeeping = await phone.evaluate(() => {
+      const SET = { P: 18, L: 4, N: 4, S: 4, G: 4, B: 2, R: 2 };
+      const st = window.__app.state().pos;
+      const onBoard = { P: 0, L: 0, N: 0, S: 0, G: 0, B: 0, R: 0 };
+      for (const p of st.board) {
+        if (!p) continue;
+        const t = window.Core.baseType(p).toUpperCase();
+        if (t !== 'K') onBoard[t]++;
+      }
+      const bad = [];
+      for (const t of Object.keys(SET)) {
+        const want = Math.max(0, SET[t] - onBoard[t]);
+        if (st.hands.w[t] !== want) bad.push(`${t}: 駒台${st.hands.w[t]} / 期待${want}`);
+        if (st.hands.w[t] < 0 || st.hands.b[t] < 0) bad.push(`${t}: 枚数が負`);
+      }
+      return { bad, senteHand: st.hands.b };
+    });
+    ok(bookkeeping.bad.length === 0,
+      `盤に出ていない駒がちょうど玉方の駒台に入る (${bookkeeping.bad.join(', ') || 'ずれなし'})`);
+    ok(Object.values(bookkeeping.senteHand).every((n) => n === 0),
+      '攻方の持ち駒は空のまま (画像からは読まない)');
 
     // ------------------------------------------------ 明るい画面・暗い画面
     section('明るい画面と暗い画面');

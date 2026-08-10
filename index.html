@@ -59,6 +59,22 @@
       </p>
     </section>
 
+    <section id="imageSection">
+      <div class="image-head">
+        <span class="tool-caption">画像から読み取る</span>
+        <button type="button" id="btnPickImage" class="tool">画像を選ぶ</button>
+        <input type="file" id="imageInput" accept="image/*" hidden>
+      </div>
+      <div id="dropZone" class="drop-zone" tabindex="0">
+        詰将棋の盤面を写した画像を、ここに貼り付け (⌘/Ctrl+V) するか、
+        ドラッグして落としてください。
+      </div>
+      <div id="imagePreviewWrap" hidden>
+        <canvas id="imagePreview" class="image-preview"></canvas>
+        <p class="image-note" id="imageNote"></p>
+      </div>
+    </section>
+
     <section id="controlsSection">
       <label class="turn-select">
         攻方(手番):
@@ -91,6 +107,7 @@
 </div>
 
 <script src="./core.js"></script>
+<script src="./recognize.js"></script>
 <script src="./app.js"></script>
 </body>
 </html>

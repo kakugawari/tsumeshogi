@@ -390,7 +390,7 @@
   // 導ければ良い)。玉方 (defender) はどんな合法手でも良い (AND ノード:
   // 全ての応手が詰みに繋がって初めて成功)。
 
-  const DEFAULT_MAX_PLIES = 41; // 21手詰めまで
+  const DEFAULT_MAX_PLIES = 41; // 41手詰めまで (plies はそのまま手数)
   const DEFAULT_NODE_BUDGET = 3000000;
 
   function findMate(state, opts) {
