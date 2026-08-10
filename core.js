@@ -400,7 +400,9 @@
     const attacker = state.turn;
     const defender = otherColor(attacker);
 
-    if (findKing(state, 'b') < 0 || findKing(state, 'w') < 0) {
+    // 攻方の玉は無くてもよい (詰将棋の diagram では省略されるのが普通)。
+    // 詰ませる対象である玉方の玉だけは必須。
+    if (findKing(state, defender) < 0) {
       return { mate: false, error: 'no-king' };
     }
 
@@ -607,8 +609,12 @@
   function validatePosition(state) {
     const errors = [];
     const warnings = [];
-    if (findKing(state, 'b') < 0) errors.push('先手の玉がありません');
-    if (findKing(state, 'w') < 0) errors.push('後手の玉がありません');
+    const attacker = state.turn, defender = otherColor(attacker);
+    // 玉方 (詰ませる対象) の玉は必須。攻方の玉は無くてもよい
+    // (詰将棋の diagram では省略されるのが普通なので)。
+    if (findKing(state, defender) < 0) {
+      errors.push(`${defender === 'b' ? '先手' : '後手'}の玉がありません`);
+    }
     if (state.board.filter((p) => p === 'K').length > 1) errors.push('先手の玉が2枚以上あります');
     if (state.board.filter((p) => p === 'k').length > 1) errors.push('後手の玉が2枚以上あります');
     const counts = pieceCounts(state);
@@ -619,7 +625,6 @@
         }
       }
     }
-    const attacker = state.turn, defender = otherColor(attacker);
     if (errors.length === 0 && isKingInCheck(state, attacker)) {
       warnings.push('手番側の玉がすでに王手されています');
     }

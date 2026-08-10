@@ -235,31 +235,44 @@ body {
 
 .hand-pieces { display: flex; flex-wrap: wrap; gap: 6px; }
 
+/* 持ち駒の札。タップすると1枚盤の外へ戻る (減る) */
 .hand-piece {
+  font: inherit;
   display: flex;
   align-items: center;
   gap: 4px;
   background: var(--bg);
   border: 1px solid var(--line);
   border-radius: 8px;
-  padding: 3px 6px;
+  padding: 4px 8px;
   font-size: 13px;
-}
-
-.hand-piece button {
-  font: inherit;
-  width: 20px;
-  height: 20px;
-  line-height: 1;
-  border-radius: 6px;
-  border: 1px solid var(--line);
-  background: var(--bg-2);
   color: var(--text);
   cursor: pointer;
   touch-action: manipulation;
 }
+.hand-piece:active { background: var(--bg-2); }
 
-.hand-piece .count { min-width: 1.4em; text-align: center; font-variant-numeric: tabular-nums; }
+.hand-piece .count { min-width: 1.4em; text-align: center; font-variant-numeric: tabular-nums; color: var(--muted); }
+
+.hand-empty { font-size: 12px; color: var(--muted); align-self: center; }
+
+/* 駒パレットで選んでいる駒を、ここにタップして持ち駒へ加える */
+.hand-add {
+  font: inherit;
+  font-size: 12px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  padding: 4px 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.hand-add:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--text);
+}
+.hand-add:disabled { cursor: default; opacity: .7; }
 
 /* ---- 駒パレット ------------------------------------------------------- */
 
@@ -282,6 +295,8 @@ body {
 }
 
 .palette-caption { font-size: 12px; color: var(--muted); }
+
+.palette-hint { margin: 0; font-size: 12px; color: var(--muted); line-height: 1.6; }
 
 .promote-toggle { font-size: 12px; display: flex; align-items: center; gap: 4px; }
 

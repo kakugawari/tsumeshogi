@@ -33,8 +33,19 @@
     btnExportSfen: document.getElementById('btnExportSfen')
   };
 
+  // 将棋の駒一式 (42枚、玉を除く)。最初は全部ここに置いておき、必要な駒だけ
+  // 盤や持ち駒へタップで移してもらう形にする。
+  const STANDARD_SET = { P: 18, L: 4, N: 4, S: 4, G: 4, B: 2, R: 2 };
+
+  function initialPosition() {
+    const pos = C.emptyState();
+    Object.assign(pos.hands.w, STANDARD_SET);
+    pos.turn = 'b';
+    return pos;
+  }
+
   const state = {
-    pos: C.emptyState(),
+    pos: initialPosition(),
     tool: null, // { color, type, promote } | 'erase' | null
     solving: false,
     worker: null,
@@ -118,45 +129,56 @@
     renderHandSide('w', els.handWhitePieces);
   }
 
+  // 持ち駒は「選んだ駒をタップして置く／すでにある駒をタップして戻す」で編集する。
+  // 数を選ぶための欄は持たない (盤に駒を置くのと同じ操作感にそろえるため)。
   function renderHandSide(color, container) {
     container.innerHTML = '';
+    let any = false;
     for (const t of HAND_ORDER) {
-      const wrap = document.createElement('span');
-      wrap.className = 'hand-piece';
-
-      const minus = document.createElement('button');
-      minus.type = 'button';
-      minus.textContent = '−';
-      minus.setAttribute('aria-label', NAMES[t] + 'を減らす');
-      minus.addEventListener('click', () => {
-        state.pos.hands[color][t] = Math.max(0, (state.pos.hands[color][t] || 0) - 1);
-        renderHands();
-        clearResult();
-      });
+      const n = state.pos.hands[color][t] || 0;
+      if (n <= 0) continue;
+      any = true;
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'hand-piece';
+      chip.setAttribute('aria-label', `${NAMES[t]} ${n}枚 (タップで1枚戻す)`);
 
       const label = document.createElement('span');
       label.textContent = NAMES[t];
-
       const count = document.createElement('span');
       count.className = 'count';
-      count.textContent = String(state.pos.hands[color][t] || 0);
+      count.textContent = String(n);
+      chip.appendChild(label);
+      chip.appendChild(count);
 
-      const plus = document.createElement('button');
-      plus.type = 'button';
-      plus.textContent = '＋';
-      plus.setAttribute('aria-label', NAMES[t] + 'を増やす');
-      plus.addEventListener('click', () => {
-        state.pos.hands[color][t] = Math.min(18, (state.pos.hands[color][t] || 0) + 1);
+      chip.addEventListener('click', () => {
+        state.pos.hands[color][t] = Math.max(0, n - 1);
         renderHands();
         clearResult();
       });
-
-      wrap.appendChild(minus);
-      wrap.appendChild(label);
-      wrap.appendChild(count);
-      wrap.appendChild(plus);
-      container.appendChild(wrap);
+      container.appendChild(chip);
     }
+    if (!any) {
+      const empty = document.createElement('span');
+      empty.className = 'hand-empty';
+      empty.textContent = 'なし';
+      container.appendChild(empty);
+    }
+
+    const add = document.createElement('button');
+    add.type = 'button';
+    add.className = 'hand-add';
+    const canAdd = state.tool && state.tool !== 'erase' && state.tool.type !== 'K';
+    add.disabled = !canAdd;
+    add.textContent = canAdd ? `＋${NAMES[state.tool.type]}をここに` : '＋ (駒を選ぶと置けます)';
+    add.addEventListener('click', () => {
+      if (!canAdd) return;
+      const t = state.tool.type;
+      state.pos.hands[color][t] = Math.min(18, (state.pos.hands[color][t] || 0) + 1);
+      renderHands();
+      clearResult();
+    });
+    container.appendChild(add);
   }
 
   // ---- パレット -----------------------------------------------------------
@@ -167,6 +189,7 @@
     els.toolErase.addEventListener('click', () => {
       state.tool = state.tool === 'erase' ? null : 'erase';
       refreshPaletteSelection();
+      renderHands();
     });
     els.promoteToggle.addEventListener('change', () => {
       if (state.tool && state.tool !== 'erase') state.tool.promote = els.promoteToggle.checked;
@@ -186,6 +209,7 @@
       btn.addEventListener('click', () => {
         state.tool = { color, type: t, promote: t !== 'K' && els.promoteToggle.checked };
         refreshPaletteSelection();
+        renderHands();
       });
       container.appendChild(btn);
     }
@@ -338,14 +362,15 @@
 
   // ---- サンプル・クリア -----------------------------------------------------
 
+  // 攻方の玉は詰将棋の diagram では省略されるのが普通なので、お試し局面にも置かない。
   const SAMPLES = [
     {
       name: '1手詰め',
-      sfen: '8k/9/7G1/9/9/9/9/9/K8 b R 1'
+      sfen: '8k/9/7G1/9/9/9/9/9/9 b R 1'
     },
     {
       name: '3手詰め',
-      sfen: '8k/9/6G2/9/9/9/9/9/K8 b LS 1'
+      sfen: '8k/9/6G2/9/9/9/9/9/9 b LS 1'
     }
   ];
   let sampleIndex = 0;
@@ -361,7 +386,7 @@
   }
 
   function clearBoard() {
-    state.pos = C.emptyState();
+    state.pos = initialPosition();
     state.pos.turn = els.turnSelect.value;
     renderBoard();
     renderHands();

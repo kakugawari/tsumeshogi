@@ -92,6 +92,11 @@ async function run() {
     const cellCount = await phone.locator('.cell').count();
     ok(cellCount === 81, `盤に81マスある (${cellCount})`);
 
+    // 最初から後手の持ち駒に駒一式が入っている (置き方がわからない、への対策)
+    const initialHands = await phone.evaluate(() => window.__app.state().pos.hands);
+    ok(initialHands.w.P === 18 && initialHands.w.R === 2, `後手の持ち駒に駒一式が最初から入っている (${JSON.stringify(initialHands.w)})`);
+    ok(Object.values(initialHands.b).every((n) => n === 0), '先手の持ち駒は最初は空');
+
     // ------------------------------------------------ お試し局面 → 詰みチェック (1手詰め)
     section('お試し局面: 1手詰め');
     await phone.locator('#btnSample').tap();
@@ -120,9 +125,12 @@ async function run() {
     const moves2 = await phone.locator('#resultMoves li').count();
     ok(moves2 === 3, `手順が3手ぶん表示される (${moves2})`);
 
-    // 押した直後に結果表示が飛ばないか
-    const jump = await measureJump(phone, '#resultSection', 'document.getElementById("btnClear").click()');
-    ok(jump < 12, `盤をクリアした直後に結果欄が飛ばない (最大ずれ ${jump}px)`);
+    // 駒を置いた直後に盤自体が飛ばないか (持ち駒の枠は駒の増減で高さが変わるのが
+    // 正しい動きなので、ここでは高さが変わらないはずの盤そのもので確かめる)
+    await phone.locator('.palette-piece[data-color="b"][data-type="P"]').tap();
+    const jump = await measureJump(phone, '#board',
+      'document.querySelector(\'.cell[data-file="5"][data-rank="5"]\').click()');
+    ok(jump < 12, `駒を置いた直後に盤が飛ばない (最大ずれ ${jump}px)`);
 
     // ------------------------------------------------ 盤面の編集
     section('盤面の編集 (駒を置く・消す)');
@@ -153,6 +161,47 @@ async function run() {
     await phone.waitForTimeout(150);
     const errText = await phone.evaluate(() => document.getElementById('resultHeadline').textContent);
     ok(errText.includes('不完全'), `玉が無いと不完全と言われる (${errText})`);
+
+    // ------------------------------------------------ 持ち駒の編集 (数を選ぶ欄なし)
+    section('持ち駒の編集 (タップで足す・戻す)');
+    await phone.locator('#btnClear').tap();
+    await phone.waitForTimeout(50);
+
+    // 駒を選ばずに「＋」は押せない
+    const addDisabledBefore = await phone.evaluate(() =>
+      document.querySelector('#handBlackPieces .hand-add').disabled);
+    ok(addDisabledBefore, '駒を選んでいないと「＋」は押せない');
+
+    // 先手の金を選んで、先手の持ち駒欄の「＋」で1枚加える
+    await phone.locator('.palette-piece[data-color="b"][data-type="G"]').tap();
+    const addEnabled = await phone.evaluate(() =>
+      !document.querySelector('#handBlackPieces .hand-add').disabled);
+    ok(addEnabled, '駒を選ぶと「＋」が押せるようになる');
+    await phone.locator('#handBlackPieces .hand-add').tap();
+    const afterAdd = await phone.evaluate(() => window.__app.state().pos.hands.b.G);
+    ok(afterAdd === 1, `「＋」で先手の持ち駒に金が1枚加わる (${afterAdd})`);
+
+    // その駒の札をタップすると1枚戻る
+    await phone.locator('#handBlackPieces .hand-piece').first().tap();
+    const afterRemove = await phone.evaluate(() => window.__app.state().pos.hands.b.G);
+    ok(afterRemove === 0, '持ち駒の札をタップすると1枚戻る');
+
+    // ------------------------------------------------ 攻方の玉は無くても詰みチェックできる
+    section('攻方の玉なしで詰みチェック');
+    await phone.evaluate(() => {
+      const ta = document.getElementById('sfenText');
+      ta.value = '8k/9/7G1/9/9/9/9/9/9 b R 1';
+      document.getElementById('btnLoadSfen').click();
+    });
+    const senteKingOnBoard = await phone.evaluate(() => window.__app.state().pos.board.includes('K'));
+    ok(!senteKingOnBoard, 'この局面に先手 (攻方) の玉は置かれていない');
+    await phone.locator('#btnCheck').tap();
+    await phone.waitForFunction(
+      () => document.getElementById('resultHeadline').textContent.includes('詰み'),
+      { timeout: 8000 }
+    );
+    const noKingResult = await phone.evaluate(() => document.getElementById('resultHeadline').textContent);
+    ok(noKingResult.includes('1手詰め'), `攻方の玉が無くても詰みチェックできる (${noKingResult})`);
 
     // ------------------------------------------------ 不詰み判定
     section('不詰み局面');
