@@ -20,6 +20,9 @@
   --board: #e0bc7e;
   --board-line: #5e4526;
   --piece-ink: #231d16;
+  /* 選んでいる駒の桃色。kakugawari/kifu の --momo と同じ値 (直前の手に使う色)。
+     盤の色は明暗どちらのテーマでも同じなので、この色も1つで足りる。 */
+  --pick: #e0628a;
   --danger: #ff6b6b;
   --ok: #7ee787;
   color-scheme: dark;
@@ -203,10 +206,14 @@ body {
 
 .cell:active { background: rgba(0, 0, 0, 0.08); }
 
-/* いま選んでいる駒。ここからもう一度タップで回す / 別のマスへ動かす */
+/* いま選んでいる駒。ここからもう一度タップで回す / 別のマスへ動かす。
+   盤の木地が茶色いので、桃色をそのまま重ねるとくすんだ赤になる。
+   いちど白で明るくしてから桃色を乗せる (kifu の「直前の手」と同じ手順)。 */
 .cell.selected {
-  background: color-mix(in srgb, var(--accent) 45%, transparent);
-  outline: 2px solid var(--accent);
+  background:
+    linear-gradient(color-mix(in srgb, var(--pick) 40%, transparent) 0 100%),
+    linear-gradient(rgba(255, 255, 255, .42) 0 100%);
+  outline: 2px solid color-mix(in srgb, var(--pick) 85%, transparent);
   outline-offset: -2px;
 }
 
