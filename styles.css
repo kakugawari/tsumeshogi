@@ -1,5 +1,14 @@
 /* 見た目。色は :root にまとめ、明るい画面と暗い画面の両方を用意する。 */
 
+/* 駒の字。kakugawari/kifu と同じ埋め込みフォント (Shippori Mincho Bold から
+   駒に使う14文字だけを切り出した woff2, 3.7KB)。端末のフォントに左右されず、
+   オフラインでも同じ見た目になる。ライセンスは fonts/ を参照。 */
+@font-face{
+  font-family:"Koma";
+  src:url(data:font/woff2;base64,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) format("woff2");
+  font-weight:400 900; font-style:normal; font-display:block;
+}
+
 :root {
   --bg: #10142a;
   --bg-2: #171d3a;
@@ -8,9 +17,9 @@
   --muted: #9aa3cf;
   --accent: #ffd166;
   --accent-ink: #2a2200;
-  --board: #e8c983;
-  --board-line: #6b5427;
-  --piece-ink: #1a1204;
+  --board: #e0bc7e;
+  --board-line: #5e4526;
+  --piece-ink: #231d16;
   --danger: #ff6b6b;
   --ok: #7ee787;
   color-scheme: dark;
@@ -25,9 +34,9 @@
     --muted: #666e93;
     --accent: #ffb703;
     --accent-ink: #2a1f00;
-    --board: #f2d999;
-    --board-line: #8a6d34;
-    --piece-ink: #1a1204;
+    --board: #e0bc7e;
+    --board-line: #5e4526;
+    --piece-ink: #231d16;
     --danger: #d1453b;
     --ok: #2f9e44;
     color-scheme: light;
@@ -43,9 +52,9 @@
   --muted: #666e93;
   --accent: #ffb703;
   --accent-ink: #2a1f00;
-  --board: #f2d999;
-  --board-line: #8a6d34;
-  --piece-ink: #1a1204;
+  --board: #e0bc7e;
+  --board-line: #5e4526;
+  --piece-ink: #231d16;
   --danger: #d1453b;
   --ok: #2f9e44;
   color-scheme: light;
@@ -187,7 +196,7 @@ body {
   font-size: min(4.2vw, 20px);
   font-weight: 700;
   color: var(--piece-ink);
-  font-family: "Hiragino Mincho ProN", "Yu Mincho", serif;
+  font-family: "Koma", "Hiragino Mincho ProN", "Yu Mincho", serif;
   touch-action: manipulation;
   user-select: none;
 }
@@ -279,7 +288,7 @@ body {
 .tool, .palette-piece {
   font: inherit;
   font-size: 15px;
-  font-family: "Hiragino Mincho ProN", "Yu Mincho", serif;
+  font-family: "Koma", "Hiragino Mincho ProN", "Yu Mincho", serif;
   min-width: 32px;
   height: 32px;
   padding: 0 6px;

@@ -9,6 +9,15 @@
 理由は README ではなく `app_template` の CLAUDE.md を参照 (ビルドを挟まず、
 1ファイルずつ差し替えられる作りを保つため)。
 
+盤と駒の見た目は `kakugawari/kifu` (棋譜ノート) と共通にしてある。
+- 駒の字は kifu と同じ埋め込みフォント (Shippori Mincho Bold から14文字だけ
+  切り出した woff2, `styles.css` に base64 で埋め込み)。詳細とライセンスは
+  `fonts/README.md`
+- 盤・駒台の色 (`--board` `--board-line` `--piece-ink`) も kifu の値
+  (`--ban` `--ban-line` `--sumi`) に合わせてある
+- 埋め込みフォントが「成」の字を含まないため、成り駒の表記は「成香」では
+  なく駒札どおりの一文字略称 (杏・圭・全) にしている
+
 ---
 
 ## 動かす・試す
