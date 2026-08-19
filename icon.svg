@@ -1,5 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="詰将棋チェッカー">
-  <rect width="512" height="512" rx="108" fill="#151a2e"/>
-  <path d="M256 96 L392 176 L392 336 L256 416 L120 336 L120 176 Z" fill="#ffd166"/>
-  <text x="256" y="300" font-family="'Hiragino Mincho ProN','Yu Mincho',serif" font-size="150" font-weight="700" fill="#2a2200" text-anchor="middle">王</text>
-</svg>

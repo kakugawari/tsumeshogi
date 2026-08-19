@@ -6,7 +6,12 @@
 <title>詰将棋チェッカー</title>
 <meta name="description" content="盤に駒を並べて、詰むかどうかと何手詰めかを調べる">
 <meta name="theme-color" content="#151a2e">
-<link rel="icon" href="./icon.svg" type="image/svg+xml">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="詰将棋">
+<link rel="manifest" href="./manifest.webmanifest">
+<!-- iOS は apple-touch-icon に SVG を使えないので PNG を置く -->
+<link rel="apple-touch-icon" href="./apple-touch-icon.png">
+<link rel="icon" href="./icon-192.png" sizes="192x192" type="image/png">
 <link rel="stylesheet" href="./styles.css">
 </head>
 <body>

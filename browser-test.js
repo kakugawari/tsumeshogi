@@ -442,6 +442,50 @@ async function run() {
       await themed.close();
     }
 
+    // ------------------------------------------------ ホーム画面のアイコン
+    section('ホーム画面のアイコン');
+    const desk = await browser.newPage();
+    await desk.goto(URL);
+
+    const apple = await desk.evaluate(() =>
+      document.querySelector('link[rel="apple-touch-icon"]')?.getAttribute('href'));
+    // iOS は apple-touch-icon に SVG を使えない。ここが SVG に戻ったら気づけるように
+    ok(!!apple && apple.endsWith('.png'), `ホーム画面用アイコンが PNG (${apple})`);
+
+    const appleRes = await desk.request.get(URL + apple.replace('./', ''));
+    ok(appleRes.ok(), `${apple} が配信される`);
+    const appleBody = await appleRes.body();
+    ok(appleBody[0] === 0x89 && appleBody.slice(1, 4).toString() === 'PNG',
+      '中身も本当に PNG (拡張子だけ png になっていない)');
+    // PNG のヘッダから縦横を読む (IHDR は 16 バイト目から)
+    const appleW = appleBody.readUInt32BE(16);
+    const appleH = appleBody.readUInt32BE(20);
+    ok(appleW === 180 && appleH === 180, `iOS 用は 180x180 (${appleW}x${appleH})`);
+
+    const favicon = await desk.evaluate(() =>
+      document.querySelector('link[rel="icon"]')?.getAttribute('href'));
+    ok(!!favicon && favicon.endsWith('.png'), `タブのアイコンも PNG (${favicon})`);
+
+    const manifestHref = await desk.evaluate(() =>
+      document.querySelector('link[rel="manifest"]')?.getAttribute('href'));
+    ok(!!manifestHref, `manifest が付いている (${manifestHref})`);
+    const manRes = await desk.request.get(URL + manifestHref.replace('./', ''));
+    ok(manRes.ok(), 'manifest が配信される');
+    const manifest = JSON.parse((await manRes.body()).toString());
+    ok(manifest.icons && manifest.icons.length >= 2,
+      `manifest にアイコンが並んでいる (${manifest.icons.length}件)`);
+    ok(manifest.icons.some((i) => i.purpose === 'maskable'),
+      'Android 用に四隅を切られても平気なアイコン (maskable) がある');
+
+    let iconsServed = 0;
+    for (const i of manifest.icons) {
+      const r = await desk.request.get(URL + i.src);
+      if (r.ok()) iconsServed++;
+    }
+    ok(iconsServed === manifest.icons.length,
+      `manifest のアイコンが全部配信される (${iconsServed}/${manifest.icons.length})`);
+    await desk.close();
+
     section('エラー');
     ok(errors.length === 0, errors.length ? '画面のエラー: ' + errors.join(' / ') : 'JS エラーなし');
   } finally {

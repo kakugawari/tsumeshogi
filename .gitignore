@@ -1,1 +1,3 @@
 node_modules/
+# アイコンを作りなおすときだけ使う。取得しなおせるのでリポジトリには入れない
+ShipporiMincho-Bold.ttf
