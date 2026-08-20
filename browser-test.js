@@ -351,8 +351,19 @@ async function run() {
     }, RECOG_SFEN);
     const recogTruth = await phone.evaluate(() => window.__app.state().pos.board.slice());
 
-    // 盤だけを撮った画像
-    const boardShot = await phone.locator('#board').screenshot();
+    // 盤だけを撮った画像。
+    // トップバーは position:sticky なので、ページが下にスクロールした状態で
+    // 撮ると盤の上に重なって写り込む (一段ぶん読めなくなる)。
+    // 「盤の写真」を作るのが目的なので、撮るあいだだけ固定を外す。
+    const boardShot = await (async () => {
+      await phone.evaluate(() => {
+        document.getElementById('topbar').style.position = 'static';
+        window.scrollTo(0, 0);
+      });
+      const shot = await phone.locator('#board').screenshot();
+      await phone.evaluate(() => { document.getElementById('topbar').style.position = ''; });
+      return shot;
+    })();
     const boardUrl = 'data:image/png;base64,' + boardShot.toString('base64');
     const t0 = Date.now();
     const boardRead = await phone.evaluate((url) => readBoardFromUrl(url), boardUrl);
@@ -389,6 +400,8 @@ async function run() {
     // ファイルを選んで読み込む道すじも動くか
     await phone.locator('#btnClear').tap();
     await phone.waitForTimeout(50);
+    await phone.locator('#btnImage').tap();      // 上のボタンで枠を開く
+    ok(await phone.isVisible('#imageSection'), '「画像から」を押すと読み取りの枠が開く');
     fs.writeFileSync(SHOT_PATH, boardShot);
     await phone.setInputFiles('#imageInput', SHOT_PATH);
     await phone.waitForFunction(
@@ -441,6 +454,32 @@ async function run() {
       ok(colors.bg !== colors.fg, `${scheme}: 文字と背景の色が違う (${colors.bg} / ${colors.fg})`);
       await themed.close();
     }
+
+    // ------------------------------------------------ 画面を短く保つ (畳んでおく)
+    section('説明と画像の枠は普段は畳んでおく');
+    await phone.reload();
+    await phone.waitForFunction(() => window.__app);
+    const foldedAtStart = await phone.evaluate(() => ({
+      help: document.getElementById('helpPanel').hidden,
+      image: document.getElementById('imageSection').hidden
+    }));
+    ok(foldedAtStart.help && foldedAtStart.image, '開いた直後はどちらも畳まれている');
+
+    // 詰みチェックのボタンが、開いた画面のどのくらい下にあるか
+    const reach = await phone.evaluate(() => {
+      const r = document.getElementById('btnCheck').getBoundingClientRect();
+      return { top: Math.round(r.top + window.scrollY), view: window.innerHeight };
+    });
+    ok(reach.top < reach.view * 1.35,
+      `「詰みチェック」がすぐ届く位置にある (上から ${reach.top}px / 画面 ${reach.view}px)`);
+
+    await phone.locator('#btnHelp').tap();
+    ok(await phone.isVisible('#helpPanel'), '「使い方」を押すと説明が開く');
+    ok(await phone.evaluate(() => document.getElementById('btnHelp').getAttribute('aria-expanded')) === 'true',
+      '開いていることが読み上げにも伝わる (aria-expanded)');
+    await phone.locator('#btnHelp').tap();
+    ok(await phone.evaluate(() => document.getElementById('helpPanel').hidden),
+      'もう一度押すと畳まれる');
 
     // ------------------------------------------------ ホーム画面のアイコン
     section('ホーム画面のアイコン');

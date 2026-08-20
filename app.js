@@ -43,6 +43,10 @@
     sfenText: document.getElementById('sfenText'),
     btnLoadSfen: document.getElementById('btnLoadSfen'),
     btnExportSfen: document.getElementById('btnExportSfen'),
+    btnHelp: document.getElementById('btnHelp'),
+    btnImage: document.getElementById('btnImage'),
+    helpPanel: document.getElementById('helpPanel'),
+    imageSection: document.getElementById('imageSection'),
     btnPickImage: document.getElementById('btnPickImage'),
     imageInput: document.getElementById('imageInput'),
     dropZone: document.getElementById('dropZone'),
@@ -578,6 +582,23 @@
     }
   }
 
+  /**
+   * 上のボタンで開け閉めする枠。普段は畳んでおいて、画面を短く保つ。
+   * 開いたときはその枠まで送る (ボタンは上、枠は盤の下にあるため)。
+   */
+  function togglePanel(panel, button, force) {
+    const open = force === undefined ? panel.hidden : force;
+    panel.hidden = !open;
+    button.setAttribute('aria-expanded', open ? 'true' : 'false');
+    button.classList.toggle('btn-on', open);
+    if (open) panel.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+
+  function setupPanels() {
+    els.btnHelp.addEventListener('click', () => togglePanel(els.helpPanel, els.btnHelp));
+    els.btnImage.addEventListener('click', () => togglePanel(els.imageSection, els.btnImage));
+  }
+
   function setupImageInput() {
     els.btnPickImage.addEventListener('click', () => els.imageInput.click());
     els.imageInput.addEventListener('change', () => {
@@ -604,7 +625,11 @@
       for (const item of items) {
         if (item.type && item.type.indexOf('image') === 0) {
           const file = item.getAsFile();
-          if (file) { e.preventDefault(); handleImage(file); }
+          if (file) {
+            e.preventDefault();
+            togglePanel(els.imageSection, els.btnImage, true);   // 結果が見えるように開く
+            handleImage(file);
+          }
           return;
         }
       }
@@ -687,6 +712,7 @@
     els.btnCancel.addEventListener('click', cancelCheck);
     els.btnClear.addEventListener('click', resetBoard);
     els.btnSample.addEventListener('click', loadSample);
+    setupPanels();
     setupImageInput();
     els.btnLoadSfen.addEventListener('click', loadSfen);
     els.btnExportSfen.addEventListener('click', exportSfen);
@@ -709,6 +735,9 @@
       loadSfen,
       exportSfen,
       handleImage,
+      togglePanel: (which, open) => togglePanel(
+        which === 'help' ? els.helpPanel : els.imageSection,
+        which === 'help' ? els.btnHelp : els.btnImage, open),
       buildTemplates,
       applyRecognized
     };

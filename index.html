@@ -22,6 +22,8 @@
     <div class="topbar-actions">
       <button type="button" id="btnSample" class="btn">お試し局面</button>
       <button type="button" id="btnClear" class="btn">最初から</button>
+      <button type="button" id="btnHelp" class="btn" aria-expanded="false" aria-controls="helpPanel">使い方</button>
+      <button type="button" id="btnImage" class="btn" aria-expanded="false" aria-controls="imageSection">画像から</button>
     </div>
   </header>
 
@@ -56,15 +58,25 @@
         <button type="button" id="boxKing" class="chip chip-box" aria-pressed="false">玉</button>
         <button type="button" id="toolErase" class="tool" aria-pressed="false">消す</button>
       </div>
+    </section>
+
+    <!-- 上の「使い方」で開け閉めする。普段は畳んでおく -->
+    <section id="helpPanel" hidden>
       <p class="tool-hint">
-        盤の駒をタップすると選べます。そのまま<b>空いたマスをタップすると移動</b>、
-        <b>もう一度同じ駒をタップすると 攻め → 守り → 成った攻め → 成った守り</b> と変わります。<br>
+        <b>駒を置く</b>: 駒台の駒をタップして選び、盤をタップします。<br>
+        <b>動かす</b>: 盤の駒をタップして選び、空いたマスをタップします。<br>
+        <b>向きと成り</b>: 同じ駒をもう一度タップすると
+        攻め → 守り → 成った攻め → 成った守り と変わります。<br>
+        <b>戻す</b>: 「消す」を押してから盤の駒をタップすると駒台に戻ります。
+      </p>
+      <p class="tool-hint">
         詰将棋の決めごとどおり、<b>玉方の駒台に残った駒は玉方が合駒に使えます</b>。
         使わせたくない駒は攻方の持ち駒へ渡してください。
       </p>
     </section>
 
-    <section id="imageSection">
+    <!-- 上の「画像から」で開け閉めする。普段は畳んでおく -->
+    <section id="imageSection" hidden>
       <div class="image-head">
         <span class="tool-caption">画像から読み取る</span>
         <button type="button" id="btnPickImage" class="tool">画像を選ぶ</button>
